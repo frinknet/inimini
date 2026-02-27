@@ -16,7 +16,7 @@
  * Life cycle:
  *   inimini_t *cfg = inimini_new();
  *
- *   if (!inimini_load(cfg, "myapp", IMI_DEFAULT)) exit(1);
+ *   if (!inimini_load(cfg, "myapp", IMI_INISTYLE)) exit(1);
  *
  *   // Set your values for internal use rather than checking many times
  *   const char *url = inimini_getstr(cfg, "server.url", "http://localhost");
@@ -28,7 +28,7 @@
  *   inimini_free(cfg);
  *
  * Edit Config:
- *   inimini_read(cfg, "./myapp.conf", IMI_KEEPENV | IMI_COMMENTS);
+ *   inimini_read(cfg, "./myapp.conf", IMI_KEEPVARS | IMI_COMMENTS);
  *
  *   inimini_setstr(cfg, "debug.mode", "true");
  *   inimini_setint(cfg, "debug.level", 1);
@@ -37,7 +37,7 @@
  *   inimini_remove(cfg, "false.setting");
  *   inimini_comment(cfg, "server.url", "External address override");
  *
- *   inimini_write(cfg, "./myapp.conf", IMI_KEEPENV | IMI_COMMENTS);
+ *   inimini_write(cfg, "./myapp.conf", IMI_KEEPVARS | IMI_COMMENTS);
  *
  *
  * ========================================================================== */
@@ -57,18 +57,22 @@
 extern "C" {
 #endif
 
-
 /* ============================================================================
  * CONFIGURATION FLAGS (bitmask)
  * Flags affect OUTPUT formatting only. Internal representation remains flat.
- * Multiple flags can be combined: flags = IMI_SUBKEYS | IMI_KEEPENV;
+ * Multiple flags can be combined: flags = IMI_SUBKEYS | IMI_KEEPVARS;
  * ========================================================================== */
-#define IMI_DEFAULT       0x0000      /* Plain INI: [section.topic] key = value # COMMENT */
-#define IMI_GITSTYLE      0x0001      /* Git-style: [section "topic"]  key = value ; COMMENT*/
-#define IMI_SUBKEYS       0x0002      /* Flat keys as subsections: [section] topic.key = value */
-#define IMI_KEEPENV       0x0004      /* Preserve ${VAR} literals on read / write */
-#define IMI_COMMENT       0x0008      /* Preserve comments inline or trailing */
 
+//TODO these don't work yet
+#define IMI_INISTYLE      0x0000      /* Plain INI: [section.topic] key = value # COMMENT */
+#define IMI_GITSTYLE      0x0001      /* Git-style: [section "topic"]  key = value ; COMMENT*/
+#define IMI_SUBSTYLE      0x0002      /* Flat keys as subsections: [section] topic.key = value */
+#define IMI_KEEPVARS      0x0004      /* Preserve ${VAR} literals on read / write */
+#define IMI_COMMENTS      0x0008      /* Preserve comments inline or trailing */
+
+#ifndef  IMI_DEPTH
+#define IMI_DEPTH 2
+#endif
 
 /* ============================================================================
  * CORE TYPES
