@@ -118,12 +118,21 @@ Combine flags to control output style and behavior:
 
 Control nesting depth at compile time:
 ```c
-#ifndef IMI_DOTDEPTH
 #define IMI_DOTDEPTH 2  // Default: splits at 2nd dot [a.b] c.d = val
-#endif
 ```
 
 This determines how many dots are used to form the section header before writing the key.
+
+---
+
+## File Extention Suffix
+
+Control nesting depth at compile time:
+```c
+#define IMI_SUFFIXED "ini" // Default: conf
+```
+
+This determines the file extention of your config file.
 
 ---
 
@@ -149,4 +158,4 @@ This determines how many dots are used to form the section header before writing
 
 ---
 
-*My mommy told me you were the very best one... And I chose Y O U!!!*
+*"My mommy told me you were the very best one... And I chose Y O U!!!"*
