@@ -16,13 +16,15 @@
 - **Merge Logic**: Values overwritten, section comments concatenated (`|`)
 - **Header-Only**: Single file include, static inline functions, no linking required
 
+YAML, TOML, and JSON? Be damned!
+
+😤 Config isn't about whitespace; it's about simple clarity.
+
 ---
 
 ## The How and Why
 
 Config should be easy like Git. It should be versatile and just work. You only need a few lines of code to build a deep, meaningful config system in an age-old format that actually works.
-
-YAML, TOML, and JSON? Be damned! 😤 Config isn't about whitespace; it's about clarity.
 
 ```c
 #include "inimini.h"  // Include once per translation unit
