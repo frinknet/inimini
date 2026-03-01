@@ -1,5 +1,4 @@
-# Inimini Miny Moe
-### "Config the thing and let it go!"
+# Inimini Miny Moe - "Config the thing and let it go!"
 
 **Inimini** is a universal configuration parser for INI and Git-style config files. Header-only, zero dependencies, and built for the pragmatic developer who wants deep nesting without the YAML whitespace drama.
 
