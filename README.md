@@ -2,13 +2,13 @@
 
 Inimini is a universal configuration parser for INI and Git-style config files. Header-only, zero dependencies.
 
-- **Git Styles**: `[section] key = value # comment` & `[section "topic"] key = value ; comment`
-- **Sub Headings & Sub Keys**: `[section.topic] deep.key = value` with depth  splits.
-- **Cross-Platform Paths**: Windows/macOS/Linux/Android/iOS auto-resolution
-- **Comment Preservation**: Inline and trailing comments retained with `IMI_COMMENT` flag
-- **Environment Expansion**: `${VAR}` variables expanded on read/write
+- **Git & INI Styles**: `[section] key = value # comment` & `[section "topic"] key = value ; comment`
+- **Sub Headings Depth**: `[section.topic] deep.key = value`
+- **Array Values Parsing**: Comma-separated values trimmed automatically
+- **Variable Expansion**: `${VAR}` variables expanded on read/write
+- **Comment Support**: Inline and trailing comments retained with `IMI_COMMENT` flag
+- **Cross-Platform**: Windows/macOS/Linux/Android/iOS auto-resolution
 - **Stacked Configs**: System → User → Local load order (later overrides earlier)
-- **Array Parsing**: Comma-separated values trimmed automatically
 - **Merge Logic**: Values overwritten, section comments concatenated
 - **Header-Only**: Single file include, static inline functions
 
