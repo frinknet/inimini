@@ -147,4 +147,4 @@ This determines how many dots are used to form the section header before writing
 
 ---
 
-*My mommy told me you wre the very best one... And I chose Y O U!!!*
+*My mommy told me you were the very best one... And I chose Y O U!!!*
