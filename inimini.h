@@ -283,6 +283,139 @@ static inline void inimini_free(inimini_t *cfg) {
 }
 
 /* ============================================================================
+ * PARSER OPERATIONS
+ * ========================================================================== */
+static inline void __imi_create_section(inimini_t *cfg, const char *name, const char *comment) {
+	imi_entry_t *e = calloc(1, sizeof(imi_entry_t));
+	e->key = NULL;
+	e->parent = strdup(name);
+	e->comment = comment ? strdup(comment) : NULL;
+
+	__imi_list_append(cfg, e);
+}
+
+static inline void __imi_parse_comment(char *line, char *buf) {
+	line = __imi_trim(line + 1);
+
+	if (strlen(buf)) strcat(buf, "\n");
+
+	strcat(buf, line);
+}
+
+static inline int __imi_parse_section(const char *line, char *section) {
+	const char *start, *end;
+	size_t slen;
+	char name[256] = {0};
+
+	start = line + 1;
+	end = strchr(start, ']');
+
+	if (!start || !end) return 0;
+
+	slen = end - start;
+
+	strncpy(name, start, slen);
+
+	name[slen] = '\0';
+
+	__imi_trim(name);
+	strcpy(section, name);
+
+	return 1;
+}
+
+static inline void __imi_parse_key_value(inimini_t *cfg, const char *line, const char *section, char *comment, uint32_t flags) {
+	char *eq = strchr(line, '=');
+
+	if (!eq) return;
+
+	*eq++ = '\0';
+
+	char *key = __imi_trim(strdup(line));
+	char *val = __imi_trim(strdup(eq));
+	size_t vlen = strlen(val);
+
+	if (vlen >= 2 && val[0] == '"' && val[vlen - 1] == '"') {
+		val[vlen - 1] = '\0';
+		val++;
+	}
+
+	char *trailing_com = strchr(val, ';');
+
+	if ((flags & IMI_COMMENTS) && trailing_com) {
+		*trailing_com = '\0';
+		val = __imi_trim(val);
+		trailing_com = __imi_trim(trailing_com + 1);
+
+		if (strlen(comment)) strcat(comment, "\n");
+
+		strcat(comment, trailing_com);
+	} else {
+		trailing_com = strchr(val, '#');
+
+		if ((flags & IMI_COMMENTS) && trailing_com) {
+			*trailing_com = '\0';
+			val = __imi_trim(val);
+			trailing_com = __imi_trim(trailing_com + 1);
+
+			if (strlen(comment)) strcat(comment, "\n");
+
+			strcat(comment, trailing_com);
+		}
+	}
+
+	char full_key[1024];
+
+	if (section[0]) snprintf(full_key, sizeof(full_key), "%s.%s", section, key);
+	else snprintf(full_key, sizeof(full_key), "%s", key);
+
+	imi_entry_t *e = calloc(1, sizeof(imi_entry_t));
+	e->key = strdup(full_key);
+	e->value = strdup(__imi_expand_env(val));
+	e->parent = __imi_extract_parent(e->key);
+	e->comment = comment ? strdup(comment) : NULL;
+
+	free(key);
+	free(val);
+
+	__imi_list_append(cfg, e);
+}
+
+static inline int __imi_parse(inimini_t *cfg, FILE *f, uint32_t flags) {
+	char line[4096], section[256] = {0}, current_comment[1024] = {0};
+
+	while (fgets(line, sizeof(line), f)) {
+		char *l = __imi_trim(line);
+
+		if (!*l) {
+			current_comment[0] = '\0';
+
+			continue;
+		}
+
+		if (*l == ';' || *l == '#') {
+			__imi_parse_comment(l, current_comment);
+
+			continue;
+		}
+
+		if (*l == '[') {
+			if (!__imi_parse_section(l, section)) continue;
+
+			__imi_create_section(cfg, section, current_comment);
+
+			current_comment[0] = '\0';
+
+			continue;
+		}
+
+		__imi_parse_key_value(cfg, l, section, current_comment, flags);
+	}
+
+	return 0;
+}
+
+/* ============================================================================
  * FILE OPERATIONS
  * ========================================================================== */
 static inline int __imi_path(const char *progname, char *buf, size_t size) {
@@ -401,140 +534,6 @@ static inline int inimini_load(inimini_t *cfg, const char *progname, uint32_t fl
 	}
 
 	return loaded;
-}
-
-/* ============================================================================
- * FILE OPERATIONS (SPLIT PARSE)
- * ========================================================================== */
-static inline void __imi_create_section(inimini_t *cfg, const char *name, const char *comment) {
-	imi_entry_t *e = calloc(1, sizeof(imi_entry_t));
-	e->key = NULL;
-	e->parent = strdup(name);
-	e->comment = comment ? strdup(comment) : NULL;
-
-	__imi_list_append(cfg, e);
-}
-
-static inline void __imi_parse_comment(char **line, char *buf) {
-	(*line)++;
-	*line = __imi_trim(*line);
-
-	if (strlen(buf)) strcat(buf, "\n");
-
-	strcat(buf, *line);
-}
-
-static inline int __imi_parse_section(const char *line, char *section) {
-	const char *start, *end;
-	size_t slen;
-	char name[256] = {0};
-
-	start = line + 1;
-	end = strchr(start, ']');
-
-	if (!start || !end) return 0;
-
-	slen = end - start;
-
-	strncpy(name, start, slen);
-
-	name[slen] = '\0';
-
-	__imi_trim(name);
-	strcpy(section, name);
-
-	return 1;
-}
-
-static inline void __imi_parse_key_value(inimini_t *cfg, const char *line, const char *section, const char *comment, uint32_t flags) {
-	char *eq = strchr(line, '=');
-
-	if (!eq) return;
-
-	*eq++ = '\0';
-
-	char *key = __imi_trim(strdup(line));
-	char *val = __imi_trim(strdup(eq));
-	size_t vlen = strlen(val);
-
-	if (vlen >= 2 && val[0] == '"' && val[vlen - 1] == '"') {
-		val[vlen - 1] = '\0';
-		val++;
-	}
-
-	char *trailing_com = strchr(val, ';');
-
-	if ((flags & IMI_COMMENTS) && trailing_com) {
-		*trailing_com = '\0';
-		val = __imi_trim(val);
-		trailing_com = __imi_trim(trailing_com + 1);
-
-		if (strlen(comment)) strcat(comment, "\n");
-
-		strcat(comment, trailing_com);
-	} else {
-		trailing_com = strchr(val, '#');
-
-		if ((flags & IMI_COMMENTS) && trailing_com) {
-			*trailing_com = '\0';
-			val = __imi_trim(val);
-			trailing_com = __imi_trim(trailing_com + 1);
-
-			if (strlen(comment)) strcat(comment, "\n");
-
-			strcat(comment, trailing_com);
-		}
-	}
-
-	char full_key[1024];
-
-	if (section[0]) snprintf(full_key, sizeof(full_key), "%s.%s", section, key);
-	else snprintf(full_key, sizeof(full_key), "%s", key);
-
-	imi_entry_t *e = calloc(1, sizeof(imi_entry_t));
-	e->key = strdup(full_key);
-	e->value = strdup(__imi_expand_env(val));
-	e->parent = __imi_extract_parent(e->key);
-	e->comment = comment ? strdup(comment) : NULL;
-
-	free(key);
-	free(val);
-
-	__imi_list_append(cfg, e);
-}
-
-static inline int __imi_parse(inimini_t *cfg, FILE *f, uint32_t flags) {
-	char line[4096], section[256] = {0}, current_comment[1024] = {0};
-
-	while (fgets(line, sizeof(line), f)) {
-		char *l = __imi_trim(line);
-
-		if (!*l) {
-			current_comment[0] = '\0';
-
-			continue;
-		}
-
-		if (*l == ';' || *l == '#') {
-			__imi_parse_comment(l, current_comment);
-
-			continue;
-		}
-
-		if (*l == '[') {
-			if (!__imi_parse_section(l, section)) continue;
-
-			__imi_create_section(cfg, section, current_comment);
-
-			current_comment[0] = '\0';
-
-			continue;
-		}
-
-		__imi_parse_key_value(cfg, l, section, current_comment, flags);
-	}
-
-	return 0;
 }
 
 /* ============================================================================
