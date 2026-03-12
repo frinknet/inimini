@@ -20,10 +20,10 @@
  *
  *   // Set your values for internal use rather than checking many times
  *   const char *url     = inimini_getstr(cfg, "server.url", "http://localhost");
- *   int timeout         = inimini_getint(cfg, "network.timeout");
- *   double ratio        = inimini_getdbl(cfg, "mix.amount");
+ *   int timeout         = inimini_getint(cfg, "network.timeout") default;
+ *   double ratio        = inimini_getdbl(cfg, "mix.amount", default);
  *   char **plugins      = inimini_getarr(cfg, "plugins.enabled", &count);
- *   bool is_daemon      = inimini_isval(cfg, "core.daemonize", "true");
+ *   bool is_daemon      = inimini_hasval(cfg, "core.daemonize", "true");
  *
  *   inimini_free(cfg);
  *
@@ -803,9 +803,27 @@ static inline char **inimini_getsub(inimini_t *cfg, const char *section, size_t 
 	return items;
 }
 
-static inline int inimini_isval(const inimini_t *cfg, const char *key, const char *val) {
+static inline int inimini_hasval(const inimini_t *cfg, const char *key, const char *val) {
 	for (const imi_entry_t *e = cfg->head; e; e = e->next) {
 		if (!strcmp(e->key, key)) return !e->value || !val || !strcmp(e->value, val);
+	}
+
+	return 0;
+}
+
+static inline int inimini_haskey(const inimini_t *cfg, const char *key) {
+	for (const imi_entry_t *e = cfg->head; e; e = e->next) {
+		if (e->key && !strcmp(e->key, key)) return 1;
+	}
+
+	return 0;
+}
+
+static inline int inimini_hassec(const inimini_t *cfg, const char *sect) {
+	size_t i = 0;
+
+	for (const imi_entry_t *e = cfg->head; e && i < cfg->count; e = e->next, i++) {
+		if (!strcmp(e->parent, sect)) return 1;
 	}
 
 	return 0;
