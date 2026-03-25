@@ -664,7 +664,7 @@ static inline int inimini_merge(inimini_t *base, const inimini_t *overlay, uint3
  * ========================================================================== */
 static inline const char *inimini_getstr(const inimini_t *cfg, const char *key, const char *def) {
 	for (const imi_entry_t *e = cfg->head; e; e = e->next) {
-		if (e->key && !strcmp(e->key, key)) return e->value;
+		if (e->key && !strcmp(e->key, key)) return strdup(e->value);
 	}
 
 	return def;
