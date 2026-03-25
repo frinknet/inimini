@@ -28,7 +28,7 @@
  *   inimini_free(cfg);
  *
  * Edit Config:
- *   inimini_read(cfg, "./myapp.conf", IMI_KEEPVARS | IMI_COMMENTS);
+ *   inimini_read(cfg, "myapp.conf", IMI_KEEPVARS | IMI_COMMENTS);
  *
  *   inimini_setstr(cfg, "debug.mode", "true");
  *   inimini_setint(cfg, "debug.level", 1);
@@ -55,6 +55,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <unistd.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -425,7 +426,7 @@ static inline int __imi_path(const char *progname, char *buf, size_t size) {
 		if (appdata) {
 			snprintf(buf, size, "%s\\%s.%s", appdata, progname, IMI_SUFFIXED);
 
-			return 1;
+			if (!access(buf, F_OK)) return 1;
 		}
 
 		char *home = getenv("USERPROFILE");
@@ -433,7 +434,7 @@ static inline int __imi_path(const char *progname, char *buf, size_t size) {
 		if (home) {
 			snprintf(buf, size, "%s\\.config\\%s.%s", home, progname, IMI_SUFFIXED);
 
-			return 1;
+			if (!access(buf, F_OK)) return 1;
 		}
 	#elif defined(__ANDROID__)
 		char *home = getenv("HOME");
@@ -441,7 +442,7 @@ static inline int __imi_path(const char *progname, char *buf, size_t size) {
 		if (home) {
 			snprintf(buf, size, "%s/.%s%s", home, progname, IMI_SUFFIXED);
 
-			return 1;
+			if (!access(buf, F_OK)) return 1;
 		}
 
 		char *pkgdir = getenv("ANDROID_APP_DIR");
@@ -449,7 +450,7 @@ static inline int __imi_path(const char *progname, char *buf, size_t size) {
 		if (pkgdir) {
 			snprintf(buf, size, "%s/config/%s.%s", pkgdir, progname,  IMI_SUFFIXED);
 
-			return 1;
+			if (!access(buf, F_OK)) return 1;
 		}
 	#elif defined(__APPLE__)
 		char *home = getenv("HOME");
@@ -457,7 +458,7 @@ static inline int __imi_path(const char *progname, char *buf, size_t size) {
 		if (home) {
 			snprintf(buf, size, "%s/.%s%s", home, progname, IMI_SUFFIXED);
 
-			return 1;
+			if (!access(buf, F_OK)) return 1;
 		}
 	#else
 		char *xdg = getenv("XDG_CONFIG_HOME");
@@ -465,7 +466,7 @@ static inline int __imi_path(const char *progname, char *buf, size_t size) {
 		if (xdg) {
 			snprintf(buf, size, "%s/%s/%s.%s", xdg, progname, progname, IMI_SUFFIXED);
 
-			return 1;
+			if (!access(buf, F_OK)) return 1;
 		}
 
 		char *home = getenv("HOME");
@@ -473,7 +474,7 @@ static inline int __imi_path(const char *progname, char *buf, size_t size) {
 		if (home) {
 			snprintf(buf, size, "%s/.%s%s", home, progname, IMI_SUFFIXED);
 
-			return 1;
+			if (!access(buf, F_OK)) return 1;
 		}
 	#endif
 
