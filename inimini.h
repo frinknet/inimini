@@ -22,7 +22,7 @@
  *   const char *url     = inimini_getstr(cfg, "server.url", "http://localhost");
  *   int timeout         = inimini_getint(cfg, "network.timeout") default;
  *   double ratio        = inimini_getdbl(cfg, "mix.amount", default);
- *   char **plugins      = inimini_getarr(cfg, "plugins.enabled", &count);
+ *   char **plugins      = inimini_getarr(cfg, "plugins.enabled", default);
  *   bool is_daemon      = inimini_hasval(cfg, "core.daemonize", "true");
  *
  *   inimini_free(cfg);
@@ -91,7 +91,7 @@ extern "C" {
  * COMMENTS: Single field per entry. Section comments concatenated on merge, entry comments overwritten.
  * PARENT TRACKING: Implied from key structure at read time ("vext.url" -> parent="vext").
  * TWO-PASS DESIGN: Parent resolution happens on read. Write uses pre-built structure.
- * STACK ORDER (later wins): /etc/{prog}/config → ~/.{prog}.conf → ./{prog}.conf
+ * STACK ORDER (later wins): /etc/{prog}/{prog}.conf → ~/.config/{prog}.conf → ~/.{prog}conf → ./.{prog}conf
  * PATH RESOLUTION: Caller sets ENV vars ($HOME, $PROGRAMDATA, etc.). Lib resolves ${VAR} strings.
  * ANDROID/IOS: Sandbox paths exposed via custom ENV variables set by host application.
  * ========================================================================== */
@@ -663,7 +663,7 @@ static inline int inimini_merge(inimini_t *base, const inimini_t *overlay, uint3
  * ========================================================================== */
 static inline const char *inimini_getstr(const inimini_t *cfg, const char *key, const char *def) {
 	for (const imi_entry_t *e = cfg->head; e; e = e->next) {
-		if (!strcmp(e->key, key)) return e->value;
+		if (e->key && !strcmp(e->key, key)) return e->value;
 	}
 
 	return def;
@@ -681,16 +681,25 @@ static inline double inimini_getdbl(const inimini_t *cfg, const char *key, doubl
 	return v ? atof(v) : def;
 }
 
-static inline char **inimini_getarr(const inimini_t *cfg, const char *key, size_t *count) {
+static inline const char **inimini_getarr(const inimini_t *cfg, const char *key, const char **def) {
 	size_t cap = 64, cnt = 0;
 	char **parsed = calloc(cap, sizeof(char*));
 
+	if (!parsed) return def;
+
 	for (const imi_entry_t *e = cfg->head; e; e = e->next) {
-		if (!strcmp(e->key, key)) {
+		if (e->key && !strcmp(e->key, key)) {
 			char *tmp = strdup(e->value);
+
+			if (!tmp) {
+				free(parsed);
+
+				return def;
+			}
+
 			char *tok = strtok(tmp, ",");
 
-			while (tok && cnt < cap) {
+			while (tok && cnt < cap - 1) { /* Leave room for NULL terminator */
 				char *trimmed = tok;
 
 				while (isspace((unsigned char)*trimmed)) trimmed++;
@@ -710,9 +719,15 @@ static inline char **inimini_getarr(const inimini_t *cfg, const char *key, size_
 		}
 	}
 
-	*count = cnt;
+	if (cnt == 0) {
+		free(parsed);
 
-	return !cnt ? NULL : parsed;
+		return def;
+	}
+
+	parsed[cnt] = NULL;
+
+	return (const char **)parsed;
 }
 
 static inline char **inimini_getsub(inimini_t *cfg, const char *section, size_t *count) {
@@ -805,7 +820,7 @@ static inline char **inimini_getsub(inimini_t *cfg, const char *section, size_t 
 
 static inline int inimini_hasval(const inimini_t *cfg, const char *key, const char *val) {
 	for (const imi_entry_t *e = cfg->head; e; e = e->next) {
-		if (!strcmp(e->key, key)) return !e->value || !val || !strcmp(e->value, val);
+		if (e->key && !strcmp(e->key, key)) return !e->value || !val || !strcmp(e->value, val);
 	}
 
 	return 0;
