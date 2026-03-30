@@ -86,6 +86,21 @@ extern "C" {
 #define IMI_SUFFIXED     "conf"
 #endif
 
+/* Default section for the conf */
+#ifndef IMI_DEFAULT
+#define IMI_DEFAULT      "core"
+#endif
+
+/* Default key length */
+#ifndef IMI_KEY_LEN
+#define IMI_KEY_LEN      1024
+#endif
+
+/* Default section length */
+#ifndef IMI_SECTION_LEN
+#define IMI_SECTION_LEN   256
+#endif
+
 /* ============================================================================
  * CORE TYPES
  * MEMORY MODEL: Linked list (no realloc brittleness). Each entry malloc'd independently.
@@ -97,17 +112,18 @@ extern "C" {
  * ANDROID/IOS: Sandbox paths exposed via custom ENV variables set by host application.
  * ========================================================================== */
 typedef struct imi_entry {
-	char *key;           /* Flat key: "section.sub.key" */
-	char *value;         /* Raw string value (may contain inline comments) */
-	char *comment;       /* Single comment field (concatenated for sections on merge) */
-	char *parent;        /* Computed parent section ("vext"), "" if no section */
+	char   *key;             /* Flat key: "section.sub.key" */
+	char   *value;           /* Raw string value (may contain inline comments) */
+	char   *comment;         /* Single comment field (concatenated for sections on merge) */
+	char   *parent;          /* Computed parent section ("vext"), "" if no section */
+	char   **parsed;         /* when returned as an array stored here */
 	struct imi_entry *next;  /* Linked list node */
 } imi_entry_t;
 
 typedef struct {
-	imi_entry_t *head;   /* First entry in config linked list */
-	imi_entry_t *tail;   /* Last entry in config linked list */
-	size_t count;        /* Total number of entries traversable */
+	imi_entry_t *head;  /* First entry in config linked list */
+	imi_entry_t *tail;  /* Last entry in config linked list */
+	size_t      count;  /* Total number of entries traversable */
 } inimini_t;
 
 /* ============================================================================
@@ -134,17 +150,17 @@ static inline char *__imi_expand_env(const char *in) {
 
 	if (!start) return strdup(in);
 
-	char result[8192];
+	char res[8192];
 	size_t pos = 0;
 	const char *cursor = in;
 
-	while ((start = strstr(cursor, "${")) && cursor < start + sizeof(result)) {
+	while ((start = strstr(cursor, "${")) && cursor < start + sizeof(res)) {
 		if (start > cursor) {
 			size_t len = start - cursor;
 
-			if (pos + len >= sizeof(result)) break;
+			if (pos + len >= sizeof(res)) break;
 
-			memcpy(result + pos, cursor, len);
+			memcpy(res + pos, cursor, len);
 
 			pos += len;
 		}
@@ -167,9 +183,9 @@ static inline char *__imi_expand_env(const char *in) {
 		if (val) {
 			size_t val_len = strlen(val);
 
-			if (pos + val_len >= sizeof(result)) break;
+			if (pos + val_len >= sizeof(res)) break;
 
-			memcpy(result + pos, val, val_len);
+			memcpy(res + pos, val, val_len);
 
 			pos += val_len;
 		}
@@ -182,16 +198,16 @@ static inline char *__imi_expand_env(const char *in) {
 	if (*cursor) {
 		size_t remaining = strlen(cursor);
 
-		if (pos + remaining >= sizeof(result)) remaining = sizeof(result) - pos - 1;
+		if (pos + remaining >= sizeof(res)) remaining = sizeof(res) - pos - 1;
 
-		memcpy(result + pos, cursor, remaining);
+		memcpy(res + pos, cursor, remaining);
 
 		pos += remaining;
 	}
 
-	result[pos] = '\0';
+	res[pos] = '\0';
 
-	return strdup(result);
+	return strdup(res);
 }
 
 static inline void __imi_free_array(char **arr, size_t count) {
@@ -202,24 +218,17 @@ static inline void __imi_free_array(char **arr, size_t count) {
 	free(arr);
 }
 
-/* Extract segment at specified depth level from flat key */
 static inline char *__imi_extract_parent(const char *key) {
 	if (!key) return strdup("");
 
-	const char *dot = key;
-	int dot_count = 0;
-
-	while (*dot && dot_count < IMI_DOTDEPTH) {
-		dot = strchr(dot + 1, '.');
-
-		if (!dot) break;
-
-		dot_count++;
-	}
+	const char *dot = strrchr(key, '.');
 
 	if (!dot) return strdup(key);
 
 	size_t len = dot - key;
+
+	if (len == 0) return strdup(IMI_DEFAULT);
+
 	char *parent = malloc(len + 1);
 
 	if (!parent) return strdup("");
@@ -229,6 +238,18 @@ static inline char *__imi_extract_parent(const char *key) {
 	parent[len] = '\0';
 
 	return parent;
+}
+
+static inline char *__imi_extract_key(const char *key) {
+	if (strchr(key, '.') != NULL) return strdup(key);
+
+	size_t tlen = strlen(IMI_DEFAULT);
+	size_t klen = strlen(key);
+	char   res[IMI_KEY_LEN];
+
+	snprintf(res, IMI_KEY_LEN, "%s.%s", IMI_DEFAULT, key);
+
+	return strdup(res);
 }
 
 static inline void __imi_list_append(inimini_t *cfg, imi_entry_t *entry) {
@@ -273,6 +294,7 @@ static inline void inimini_free(inimini_t *cfg) {
 
 		free(e->key);
 		free(e->value);
+		free(e->parsed);
 		free(e->comment);
 		free(e->parent);
 		free(e);
@@ -306,7 +328,7 @@ static inline void __imi_parse_comment(char *line, char *buf) {
 static inline int __imi_parse_section(const char *line, char *section) {
 	const char *start, *end;
 	size_t slen;
-	char name[256] = {0};
+	char name[IMI_SECTION_LEN] = {0};
 
 	start = line + 1;
 	end = strchr(start, ']');
@@ -365,13 +387,13 @@ static inline void __imi_parse_key_value(inimini_t *cfg, const char *line, const
 		}
 	}
 
-	char full_key[1024];
+	char tmpkey[IMI_KEY_LEN];
 
-	if (section[0]) snprintf(full_key, sizeof(full_key), "%s.%s", section, key);
-	else snprintf(full_key, sizeof(full_key), "%s", key);
+	if (section[0]) snprintf(tmpkey, IMI_KEY_LEN, "%s.%s", section, key);
+	else snprintf(tmpkey, IMI_KEY_LEN, "%s", key);
 
 	imi_entry_t *e = calloc(1, sizeof(imi_entry_t));
-	e->key = strdup(full_key);
+	e->key = __imi_extract_key(tmpkey);
 	e->value = strdup(__imi_expand_env(val));
 	e->parent = __imi_extract_parent(e->key);
 	e->comment = comment ? strdup(comment) : NULL;
@@ -383,7 +405,7 @@ static inline void __imi_parse_key_value(inimini_t *cfg, const char *line, const
 }
 
 static inline int __imi_parse(inimini_t *cfg, FILE *f, uint32_t flags) {
-	char line[4096], section[256] = {0}, current_comment[1024] = {0};
+	char line[4096], section[IMI_SECTION_LEN] = {0}, current_comment[1024] = {0};
 
 	while (fgets(line, sizeof(line), f)) {
 		char *l = __imi_trim(line);
@@ -419,70 +441,67 @@ static inline int __imi_parse(inimini_t *cfg, FILE *f, uint32_t flags) {
 /* ============================================================================
  * FILE OPERATIONS
  * ========================================================================== */
-static inline int __imi_path(const char *progname, char *buf, size_t size) {
+static inline FILE *inimini_sysconf(const char *progname, char * restrict mode) {
+	size_t size = 4096;
+	char path[4096] =  {0};
+
+	#if defined(_WIN32)
+		snprintf(path, size, "C:/ProgramData/%s/%s.%s", progname, progname, IMI_SUFFIXED);
+	#else
+		snprintf(path, size, "/etc/%s/%s.%s", progname, progname, IMI_SUFFIXED);
+	#endif
+
+	return fopen(path, mode);
+}
+
+static inline FILE *inimini_usrconf(const char *progname, char * restrict mode) {
+	size_t size = 4096;
+	char path[4096] = {0};
+
 	#if defined(_WIN32)
 		char *appdata = getenv("APPDATA");
 
-		if (appdata) {
-			snprintf(buf, size, "%s\\%s.%s", appdata, progname, IMI_SUFFIXED);
+		if (appdata) snprintf(path, size, "%s\\%s.%s", appdata, progname, IMI_SUFFIXED);
 
-			if (!access(buf, F_OK)) return 1;
-		}
+		char *home = access(path, F_OK) ? getenv("USERPROFILE") : NULL;
 
-		char *home = getenv("USERPROFILE");
-
-		if (home) {
-			snprintf(buf, size, "%s\\.config\\%s.%s", home, progname, IMI_SUFFIXED);
-
-			if (!access(buf, F_OK)) return 1;
-		}
+		if (home) snprintf(path, size, "%s\\.config\\%s.%s", home, progname, IMI_SUFFIXED);
 	#elif defined(__ANDROID__)
 		char *home = getenv("HOME");
 
-		if (home) {
-			snprintf(buf, size, "%s/.%s%s", home, progname, IMI_SUFFIXED);
+		if (home) snprintf(path, size, "%s/.%s%s", home, progname, IMI_SUFFIXED);
 
-			if (!access(buf, F_OK)) return 1;
-		}
+		char *pkgdir = access(path, F_OK) ? getenv("ANDROID_APP_DIR") : NULL;
 
-		char *pkgdir = getenv("ANDROID_APP_DIR");
-
-		if (pkgdir) {
-			snprintf(buf, size, "%s/config/%s.%s", pkgdir, progname,  IMI_SUFFIXED);
-
-			if (!access(buf, F_OK)) return 1;
-		}
+		if (pkgdir) snprintf(path, size, "%s/config/%s.%s", pkgdir, progname,  IMI_SUFFIXED);
 	#elif defined(__APPLE__)
 		char *home = getenv("HOME");
 
-		if (home) {
-			snprintf(buf, size, "%s/.%s%s", home, progname, IMI_SUFFIXED);
-
-			if (!access(buf, F_OK)) return 1;
-		}
+		if (home) snprintf(path, size, "%s/.%s%s", home, progname, IMI_SUFFIXED);
 	#else
 		char *xdg = getenv("XDG_CONFIG_HOME");
 
-		if (xdg) {
-			snprintf(buf, size, "%s/%s/%s.%s", xdg, progname, progname, IMI_SUFFIXED);
+		if (xdg) snprintf(path, size, "%s/%s/%s.%s", xdg, progname, progname, IMI_SUFFIXED);
 
-			if (!access(buf, F_OK)) return 1;
-		}
+		char *home = access(path, F_OK) ? getenv("HOME") : NULL;
 
-		char *home = getenv("HOME");
-
-		if (home) {
-			snprintf(buf, size, "%s/.%s%s", home, progname, IMI_SUFFIXED);
-
-			if (!access(buf, F_OK)) return 1;
-		}
+		if (home) snprintf(path, size, "%s/.%s%s", home, progname, IMI_SUFFIXED);
 	#endif
 
-	return 0;
+	return fopen(path, mode);
 }
 
-static inline int inimini_read(inimini_t *cfg, const char *path, uint32_t flags) {
-	FILE *f = fopen(path, "r");
+static inline FILE *inimini_dirconf(const char *progname, char * restrict mode) {
+	size_t size = 4096;
+	char path[4096] =  {0};
+
+	snprintf(path, size, "./.%s%s", progname, IMI_SUFFIXED);
+
+	return fopen(path, mode);
+}
+
+static inline int inimini_read(inimini_t *cfg, const char *filepath, uint32_t flags) {
+	FILE *f = fopen(filepath, "r");
 
 	if (!f) return -1;
 
@@ -494,16 +513,10 @@ static inline int inimini_read(inimini_t *cfg, const char *path, uint32_t flags)
 }
 
 static inline int inimini_load(inimini_t *cfg, const char *progname, uint32_t flags) {
-	char path[4096];
 	int loaded = 0;
+	FILE *f;
 
-	#if defined(_WIN32)
-		snprintf(path, sizeof(path), "C:/ProgramData/%s/%s.%s", progname, progname, IMI_SUFFIXED);
-	#else
-		snprintf(path, sizeof(path), "/etc/%s/%s.%s", progname, progname, IMI_SUFFIXED);
-	#endif
-
-	FILE *f = fopen(path, "r");
+	f = inimini_sysconf(progname, "r");
 
 	if (f) {
 		__imi_parse(cfg, f, flags);
@@ -512,20 +525,17 @@ static inline int inimini_load(inimini_t *cfg, const char *progname, uint32_t fl
 		loaded++;
 	}
 
-	if (__imi_path(progname, path, sizeof(path))) {
-		f = fopen(path, "r");
+	f = inimini_usrconf(progname, "r");
 
-		if (f) {
-			__imi_parse(cfg, f, flags);
-			fclose(f);
+	if (f) {
+		__imi_parse(cfg, f, flags);
+		fclose(f);
 
-			loaded++;
-		}
+		loaded++;
 	}
 
-	snprintf(path, sizeof(path), "./.%s%s", progname, IMI_SUFFIXED);
 
-	f = fopen(path, "r");
+	f = inimini_dirconf(progname, "r");
 
 	if (f) {
 		__imi_parse(cfg, f, flags);
@@ -551,9 +561,7 @@ static inline void __imi_write_header(FILE *f, const char *parent, uint32_t flag
 	}
 }
 
-static inline int inimini_write(const inimini_t *cfg, const char *path, uint32_t flags) {
-	FILE *f = fopen(path, "w");
-
+static inline int __imi_write(const inimini_t *cfg, FILE *f, uint32_t flags) {
 	if (!f) return -1;
 
 	const imi_entry_t *prev = NULL;
@@ -606,9 +614,17 @@ static inline int inimini_write(const inimini_t *cfg, const char *path, uint32_t
 		prev = e;
 	}
 
-	fclose(f);
 
 	return 0;
+}
+
+static inline int inimini_write(const inimini_t *cfg, const char *path, uint32_t flags) {
+	FILE *f = fopen(path, "w");
+	int r = __imi_write(cfg, f, flags);
+
+	fclose(f);
+
+	return r;
 }
 
 /* ============================================================================
@@ -664,7 +680,7 @@ static inline int inimini_merge(inimini_t *base, const inimini_t *overlay, uint3
  * ========================================================================== */
 static inline const char *inimini_getstr(const inimini_t *cfg, const char *key, const char *def) {
 	for (const imi_entry_t *e = cfg->head; e; e = e->next) {
-		if (e->key && !strcmp(e->key, key)) return strdup(e->value);
+		if (e->key && !strcmp(e->key, key)) return e->value;
 	}
 
 	return def;
@@ -688,9 +704,11 @@ static inline const char **inimini_getarr(const inimini_t *cfg, const char *key,
 
 	if (!parsed) return def;
 
-	for (const imi_entry_t *e = cfg->head; e; e = e->next) {
+	for (imi_entry_t *e = cfg->head; e; e = e->next) {
 		if (e->key && !strcmp(e->key, key)) {
-			char *tmp = strdup(e->value);
+			char *tmp = e->value;
+
+			if (e->parsed) return (const char**)e->parsed;
 
 			if (!tmp) {
 				free(parsed);
@@ -709,12 +727,12 @@ static inline const char **inimini_getarr(const inimini_t *cfg, const char *key,
 
 				while (end > trimmed && isspace((unsigned char)*end)) *end-- = '\0';
 
-				if (*trimmed) parsed[cnt++] = strdup(trimmed);
+				if (*trimmed) parsed[cnt++] = trimmed;
 
 				tok = strtok(NULL, ",");
 			}
 
-			free(tmp);
+			e->parsed = parsed;
 
 			break;
 		}
@@ -854,6 +872,8 @@ static inline size_t inimini_count(const inimini_t *cfg) {
  * ========================================================================== */
 static inline int inimini_setstr(inimini_t *cfg, const char *key, const char *val) {
 	for (imi_entry_t *e = cfg->head; e; e = e->next) {
+		if (!e->key) continue;
+
 		if (!strcmp(e->key, key)) {
 			free(e->value);
 
@@ -863,15 +883,15 @@ static inline int inimini_setstr(inimini_t *cfg, const char *key, const char *va
 		}
 	}
 
-	imi_entry_t *entry = calloc(1, sizeof(imi_entry_t));
+	imi_entry_t *e = calloc(1, sizeof(imi_entry_t));
 
-	if (!entry) return -1;
+	if (!e) return -1;
 
-	entry->key = strdup(key);
-	entry->value = strdup(val);
-	entry->parent = __imi_extract_parent(key);
+	e->key = __imi_extract_key(key);
+	e->value = strdup(val);
+	e->parent = __imi_extract_parent(key);
 
-	__imi_list_append(cfg, entry);
+	__imi_list_append(cfg, e);
 
 	return 0;
 }
