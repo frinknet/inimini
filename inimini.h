@@ -279,7 +279,7 @@ static inline imi_entry_t *__imi_find_entry(inimini_t *cfg, const char *key) {
  * OBJECT LIFECYCLE
  * ========================================================================== */
 static inline inimini_t *inimini_new(void) {
-	inimini_t *cfg = calloc(1, sizeof(inimini_t));
+	inimini_t *cfg = malloc(sizeof(inimini_t));
 
 	return cfg;
 }
